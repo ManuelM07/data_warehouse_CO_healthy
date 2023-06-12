@@ -26,6 +26,7 @@ def get_medical_formula():
 
     return df_medical_formula
 
+
 def get_dimensions():
     """Get all dimensions to use"""
 
@@ -48,6 +49,7 @@ def insert_data_dim():
     new_model(df_medicine.toPandas(), "dim_medicamento", PROCESS)
     new_model(df_date.toPandas(), "dim_fecha", PROCESS)
 
+
 def query_dimensions():
     # Configuring the connection properties to CockroachDB
     aux_url = config['URL_JDBC']
@@ -65,6 +67,7 @@ def query_dimensions():
     df_date = spark.read.jdbc(url, "dim_fecha", properties=properties)
 
     return df_user, df_medico, df_medicine, df_date
+
 
 def run():
     # Init ETL

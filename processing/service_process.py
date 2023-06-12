@@ -106,6 +106,7 @@ def query_dimensions():
 
     return dim_medico, dim_user, dim_region, dim_hour, dim_date
 
+
 def run():
     # Init ETL
 

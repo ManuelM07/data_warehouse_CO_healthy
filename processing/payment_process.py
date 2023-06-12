@@ -12,6 +12,7 @@ spark = SparkSession.builder \
 
 PROCESS = "facturacion"
 
+
 def get_dimensions():
     """Get all dimensions to use"""
 
@@ -57,6 +58,7 @@ def insert_data_dim(df_contributor):
     new_model(df_contributor.toPandas(), "dim_cotizante", PROCESS)
     new_model(df_date.toPandas(), "dim_fecha", PROCESS)
     new_model(df_company.toPandas(), "dim_empresa", PROCESS)
+
 
 def query_dimensions():
     # Configuring the connection properties to CockroachDB
