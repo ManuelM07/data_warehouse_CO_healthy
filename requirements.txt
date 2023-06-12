@@ -1,0 +1,7 @@
+findspark==2.0.1
+pandas==2.0.2
+psycopg2_binary==2.9.6
+pyspark==3.4.0
+python-dotenv==1.0.0
+sodapy==2.2.0
+SQLAlchemy==2.0.15
