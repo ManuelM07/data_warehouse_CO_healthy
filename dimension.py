@@ -3,9 +3,9 @@ import pandas as pd
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (monotonically_increasing_id, lit, split, 
                                    explode, col, udf)
-import pyspark.sql.functions as F
-from pyspark.sql.types import StringType
 from sodapy import Socrata
+
+# Define all the dimensions involved in the processes
 
 class Dimension:
 
@@ -16,48 +16,46 @@ class Dimension:
     def beneficiary(self):
         result, column_names = execute_query("SELECT * FROM beneficiario")
         df_beneficiary = self.spark.createDataFrame(result, column_names)
-        df_beneficiary = df_beneficiary[['id_beneficiario', 'nombre', 'fecha_nacimiento', 'sexo', 
-                                 'tipo_discapacidad']]
-        return df_beneficiary
+        df_beneficiary = df_beneficiary.select('id_beneficiario', 'nombre', 'fecha_nacimiento', 'sexo')
+        return df_beneficiary.dropDuplicates()
     
 
     def dim_contributor(self):
         result, column_names = execute_query("SELECT * FROM cotizante")
         df_contributor = self.spark.createDataFrame(result, column_names)
+        df_contributor = df_contributor.drop("id_ips", "direccion", "estado_civil", "estracto", "tipo_discapacidad", "salario_base")
 
-        return df_contributor
+        return df_contributor.dropDuplicates()
     
 
     def dim_user(self):
         df_contributor_aux = self.dim_contributor()
         df_beneficiary = self.beneficiary()
-        df_contributor_aux = df_contributor_aux[['cedula', 'nombre', 'fecha_nacimiento', 'sexo', 
-                                 'tipo_discapacidad']]
+        df_contributor_aux = df_contributor_aux.select('cedula', 'nombre', 'fecha_nacimiento', 'sexo')
         
         # Concat df beneficiary & contributor for create dim user
         df_contributor_aux = df_contributor_aux.withColumnRenamed("cedula", "identificacion")
         df_beneficiary = df_beneficiary.withColumnRenamed("id_beneficiario", "identificacion")
         df_merged_user = df_contributor_aux.unionByName(df_beneficiary)
 
-        return df_merged_user
+        return df_merged_user.dropDuplicates()
     
 
     def dim_medical_center(self):
         result, column_names = execute_query("SELECT * FROM ips")
         df_medical_center = self.spark.createDataFrame(result, column_names)
-        df_medical_center = df_medical_center[['nombre', 'direccion', 'tipo_ips', 
+        df_medical_center = df_medical_center[['id_ips', 'nombre', 'direccion', 'tipo_ips', 
                 'municipio']].withColumnRenamed("tipo_ips", 
                 "tipo_centro_medico").withColumn("activo", lit(True))
-
-        return df_medical_center
+        return df_medical_center.dropDuplicates()
     
     
     def dim_medico(self):
         result, column_names = execute_query("SELECT * FROM medico")
         df_medico = self.spark.createDataFrame(result, column_names)
-        df_medico = df_medico.drop("subespecialidad", "id_ips")
+        df_medico = df_medico.drop("subespecialidad", "id_ips", "Direccion_Consultorio")
 
-        return df_medico
+        return df_medico.dropDuplicates()
     
 
     def dim_medicine(self):
@@ -72,7 +70,7 @@ class Dimension:
         for old_name, new_name in column_rename_list:
             df_medicine = df_medicine.withColumnRenamed(old_name, new_name)
 
-        return df_medicine
+        return df_medicine.dropDuplicates()
 
 
     def dim_date(self, start_date, end_date):
@@ -117,7 +115,7 @@ class Dimension:
         df["fecha"] = df["fecha"].dt.strftime('%Y-%m-%d')  # Format of fecha "yyyy-MM-dd"
         df = df[["fecha", "anio", "mes_numero", "mes", "dia_numero", "dia_semana", "es_fin_de_semana"]]
         
-        return self.spark.createDataFrame(df)   
+        return self.spark.createDataFrame(df)
 
     
     def dim_region(self):
@@ -130,20 +128,27 @@ class Dimension:
 
         results = client.get(socrata_dataset_id, limit=1200)
         df_region = self.spark.createDataFrame(results)
+        df_region = df_region.select("municipio", "departamento", "region")
 
-        return df_region
+        return df_region.dropDuplicates()
 
 
     def dim_disease(self):
         result, column_names = execute_query("SELECT * FROM preexistencias")
         df_disease = self.spark.createDataFrame(result, column_names)
         df_disease = df_disease[["enfermedad"]].distinct()
-
-        return df_disease
+        return df_disease.dropDuplicates()
     
 
     def dim_company(self):
         result, column_names = execute_query("SELECT * FROM empresa")
         df_company = self.spark.createDataFrame(result, column_names)
+        return df_company.dropDuplicates()
 
-        return df_company
+
+    def dim_demographic(self):
+        result, column_names = execute_query("SELECT * FROM cotizante")
+        df_contributor = self.spark.createDataFrame(result, column_names)
+        df_contributor = df_contributor.select("direccion", "estado_civil", "estracto", "tipo_discapacidad", "salario_base")
+
+        return df_contributor.dropDuplicates()
