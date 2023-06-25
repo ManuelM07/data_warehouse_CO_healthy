@@ -43,7 +43,10 @@ def get_connection():
 
 # Define a function to release a database connection back to the pool
 def release_connection(connection):
-    connection_pool.put(connection)
+    if connection_pool.qsize() < 5:
+        connection_pool.put(connection)
+    else:
+        connection.close()
 
 
 # Define a function to execute a query using a database connection
