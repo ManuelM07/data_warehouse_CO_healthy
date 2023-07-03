@@ -1,7 +1,8 @@
-from conection import execute_query, new_model
+from conection import execute_query, insert_data
 from dimension import Dimension
 from pyspark.sql import SparkSession
 from dotenv import dotenv_values
+import pandas as pd
 
 config = dotenv_values(".env")
 
@@ -11,7 +12,10 @@ spark = SparkSession.builder \
     .getOrCreate()
 
 PROCESS = "facturacion"
-
+URL = config['URL_PAYMENT']
+KEY = config['KEY_PAYMENT']
+url_ = ""
+option = {}
 
 def get_dimensions():
     """Get all dimensions to use"""
@@ -29,17 +33,22 @@ def get_dimensions():
 
 
 def query_dimensions_demografic():
-    # Configuring the connection properties to CockroachDB
-    aux_url = config['URL_JDBC']
-    url = f"{aux_url}/{PROCESS}"
+    global url_, options
 
-    properties = {
-        "user": config['USER_DW'],
-        "password": config['PASSWORD_DW'],
+    # Configuring the connection properties to CockroachDB
+    url_ = config['JDBC_PAYMENT']
+    options = {
+        "user": config['USER_OUT'],
+        "password": config['PASSWORD_OUT'],
         "driver": "org.postgresql.Driver"
     }
 
-    dim_demographic = spark.read.jdbc(url, "dim_demografica", properties=properties)
+    dim_demographic = spark.read \
+        .format("jdbc") \
+        .option("url", url_) \
+        .option("dbtable", "dim_demografica") \
+        .options(**options) \
+        .load()
 
     return dim_demographic
 
@@ -52,30 +61,59 @@ def insert_data_dim(df_contributor):
 
     df_contributor = df_contributor.drop("proviene_otra_eps")
     df_disease = df_disease.withColumnRenamed("enfermedad", "nombre")
+    df_contributor = df_contributor.toPandas()
 
-    new_model(df_medical_center.toPandas(), "dim_centro_medico", PROCESS)
-    new_model(df_disease.toPandas(), "dim_enfermedad", PROCESS)
-    new_model(df_contributor.toPandas(), "dim_cotizante", PROCESS)
-    new_model(df_date.toPandas(), "dim_fecha", PROCESS)
-    new_model(df_company.toPandas(), "dim_empresa", PROCESS)
+    # Change type date to str
+    df_contributor['fecha_nacimiento'] = pd.to_datetime(df_contributor['fecha_nacimiento'])
+    df_contributor['fecha_nacimiento'] = df_contributor['fecha_nacimiento'].dt.strftime("%Y-%m-%d")
+    df_contributor['fecha_afiliacion'] = pd.to_datetime(df_contributor['fecha_afiliacion'])
+    df_contributor['fecha_afiliacion'] = df_contributor['fecha_afiliacion'].dt.strftime("%Y-%m-%d")
+
+    insert_data(df_medical_center.toPandas(), "dim_centro_medico", URL, KEY)
+    insert_data(df_disease.toPandas(), "dim_enfermedad", URL, KEY)
+    insert_data(df_contributor, "dim_cotizante", URL, KEY)
+    insert_data(df_date.toPandas(), "dim_fecha", URL, KEY)
+    insert_data(df_company.toPandas(), "dim_empresa", URL, KEY)
 
 
 def query_dimensions():
+    global url_, options
+
     # Configuring the connection properties to CockroachDB
-    aux_url = config['URL_JDBC']
-    url = f"{aux_url}/{PROCESS}"
-
-    properties = {
-        "user": config['USER_DW'],
-        "password": config['PASSWORD_DW'],
-        "driver": "org.postgresql.Driver"
-    }
-
-    dim_contributor = spark.read.jdbc(url, "dim_cotizante", properties=properties)
-    dim_medical_center = spark.read.jdbc(url, "dim_centro_medico", properties=properties)
-    dim_company = spark.read.jdbc(url, "dim_empresa", properties=properties)
-    dim_desease = spark.read.jdbc(url, "dim_enfermedad", properties=properties)
-    dim_date = spark.read.jdbc(url, "dim_fecha", properties=properties)
+    dim_contributor = spark.read \
+        .format("jdbc") \
+        .option("url", url_) \
+        .option("dbtable", "dim_cotizante") \
+        .options(**options) \
+        .load()
+    
+    dim_medical_center = spark.read \
+        .format("jdbc") \
+        .option("url", url_) \
+        .option("dbtable", "dim_centro_medico") \
+        .options(**options) \
+        .load()
+    
+    dim_company = spark.read \
+        .format("jdbc") \
+        .option("url", url_) \
+        .option("dbtable", "dim_empresa") \
+        .options(**options) \
+        .load()
+    
+    dim_desease = spark.read \
+        .format("jdbc") \
+        .option("url", url_) \
+        .option("dbtable", "dim_enfermedad") \
+        .options(**options) \
+        .load()
+    
+    dim_date = spark.read \
+        .format("jdbc") \
+        .option("url", url_) \
+        .option("dbtable", "dim_fecha") \
+        .options(**options) \
+        .load()
 
     return dim_contributor, dim_medical_center, dim_company, dim_desease, dim_date
 
@@ -92,7 +130,7 @@ def run():
     result, column_names = execute_query("SELECT * FROM COTIZANTE")
     df_contributor_aux = spark.createDataFrame(result, column_names)
 
-    new_model(df_demographic.toPandas(), "dim_demografica", PROCESS)
+    insert_data(df_demographic.toPandas(), "dim_demografica", URL, KEY)
     dim_demographic = query_dimensions_demografic()
 
     df_contributor = dim_demographic.join(df_contributor_aux, on=["direccion", "estado_civil", "estracto", "tipo_discapacidad", "salario_base"])
@@ -121,4 +159,5 @@ def run():
     merged_df = merged_df.join(dim_date.select("fecha_id", "fecha"), merged_df["fecha_pago"]==dim_date["fecha"], "inner")
 
     fact_facturacion = merged_df.select("fecha_id", "centro_medico_id", "enfermedad_id", "empresa_id", "cotizante_id", "valor_pagado")
-    new_model(fact_facturacion.toPandas(), "fact_facturacion", PROCESS) 
+    fact_facturacion = fact_facturacion.fillna(0, subset=["empresa_id"])
+    insert_data(fact_facturacion.toPandas(), "fact_facturacion", URL, KEY) 
