@@ -6,6 +6,8 @@ from threading import Thread
 import pandas as pd
 from sqlalchemy import create_engine
 import io
+import requests
+
 
 config = dotenv_values(".env")
 
@@ -74,3 +76,26 @@ def new_model(df, name_model, name_bd, action='append') -> None:
 
 
     df.to_sql(name_model, engine, if_exists=action, index=False)
+
+
+def insert_data(df, table_name, url, key):
+    # convert df to dict
+    records = df.to_dict(orient='records')
+
+
+    # API URL of Supabase
+    insert_url = f"{url}/rest/v1/{table_name}"
+
+    headers = {
+        "apikey": key,
+        "Content-Type": "application/json"
+    }
+
+    # Request post
+    response = requests.post(insert_url, json=records, headers=headers)
+
+    # Check the insert
+    if response.status_code == 200 or response.status_code == 201:
+        print("Records successfully inserted into the table.")
+    else:
+        print("Error inserting records into table:", response.text)
