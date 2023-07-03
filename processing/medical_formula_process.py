@@ -52,12 +52,11 @@ def insert_data_dim():
     # Change type date to str
     df_user['fecha_nacimiento'] = pd.to_datetime(df_user['fecha_nacimiento'])
     df_user['fecha_nacimiento'] = df_user['fecha_nacimiento'].dt.strftime("%Y-%m-%d")
-    #df_date['fecha'] = df_date['fecha'].dt.strftime("%Y-%m-%d")
 
-    #insert_data(df_user, "dim_usuario", URL, KEY)
-    #insert_data(df_medico.toPandas(), "dim_medico", URL, KEY)
-    #insert_data(df_medicine.toPandas(), "dim_medicamento", URL, KEY)
-    #insert_data(df_date.toPandas(), "dim_fecha", URL, KEY)
+    insert_data(df_user, "dim_usuario", URL, KEY)
+    insert_data(df_medico.toPandas(), "dim_medico", URL, KEY)
+    insert_data(df_medicine.toPandas(), "dim_medicamento", URL, KEY)
+    insert_data(df_date.toPandas(), "dim_fecha", URL, KEY)
 
 
 def query_dimensions():
@@ -123,4 +122,4 @@ def run():
     fact_medical_formula.write.csv("file_extra/fact_medical_formula", header=True, mode="overwrite")
 
 
-    #insert_data(fact_medical_formula.toPandas(), "fact_medical_formula", URL, KEY)
+    insert_data(fact_medical_formula.toPandas(), "fact_medical_formula", URL, KEY)
