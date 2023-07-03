@@ -1,8 +1,9 @@
-from conection import execute_query, new_model
+from conection import execute_query, insert_data
 from dimension import Dimension
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, when
 from dotenv import dotenv_values
+import pandas as pd
 
 config = dotenv_values(".env")
 
@@ -12,7 +13,10 @@ spark = SparkSession.builder \
     .getOrCreate()
 
 PROCESS = "retiro_process"
-
+URL = config['URL_RETREAT']
+KEY = config['KEY_RETREAT']
+url_ = ""
+option = {}
 
 def get_retreat():
     """Get pricipal table"""
@@ -37,17 +41,22 @@ def get_dimensions():
 
 
 def query_dimensions_demografic():
-    # Configuring the connection properties to CockroachDB
-    aux_url = config['URL_JDBC']
-    url = f"{aux_url}/{PROCESS}"
+    global url_, options
 
-    properties = {
-        "user": config['USER_DW'],
-        "password": config['PASSWORD_DW'],
+    # Configuring the connection properties to CockroachDB
+    url_ = config['JDBC_RETREAT']
+    options = {
+        "user": config['USER_OUT'],
+        "password": config['PASSWORD_OUT'],
         "driver": "org.postgresql.Driver"
     }
 
-    dim_demographic = spark.read.jdbc(url, "dim_demografica", properties=properties)
+    dim_demographic = spark.read \
+        .format("jdbc") \
+        .option("url", url_) \
+        .option("dbtable", "dim_demografica") \
+        .options(**options) \
+        .load()
 
     return dim_demographic
 
@@ -56,28 +65,53 @@ def insert_data_dim(df_contributor):
     """Insert the tables in the db"""
 
     df_medical_center, df_region, _, _, df_date = get_dimensions()
+    df_contributor = df_contributor.toPandas()
 
-    new_model(df_medical_center.toPandas(), "dim_centro_medico", PROCESS)
-    new_model(df_region.toPandas(), "dim_region", PROCESS)
-    new_model(df_contributor.toPandas(), "dim_cotizante", PROCESS)
-    new_model(df_date.toPandas(), "dim_fecha", PROCESS)
+
+    # Change type date to str
+    df_contributor['fecha_nacimiento'] = pd.to_datetime(df_contributor['fecha_nacimiento'])
+    df_contributor['fecha_nacimiento'] = df_contributor['fecha_nacimiento'].dt.strftime("%Y-%m-%d")
+    df_contributor['fecha_afiliacion'] = pd.to_datetime(df_contributor['fecha_afiliacion'])
+    df_contributor['fecha_afiliacion'] = df_contributor['fecha_afiliacion'].dt.strftime("%Y-%m-%d")
+
+    insert_data(df_medical_center.toPandas(), "dim_centro_medico", URL, KEY)
+    insert_data(df_region.toPandas(), "dim_region", URL, KEY)
+    insert_data(df_contributor, "dim_cotizante", URL, KEY)
+    insert_data(df_date.toPandas(), "dim_fecha", URL, KEY)
 
 
 def query_dimensions():
+    global url_, options
+
+
     # Configuring the connection properties to CockroachDB
-    aux_url = config['URL_JDBC']
-    url = f"{aux_url}/{PROCESS}"
-
-    properties = {
-        "user": config['USER_DW'],
-        "password": config['PASSWORD_DW'],
-        "driver": "org.postgresql.Driver"
-    }
-
-    dim_contributor = spark.read.jdbc(url, "dim_cotizante", properties=properties)
-    dim_medical_center = spark.read.jdbc(url, "dim_centro_medico", properties=properties)
-    dim_region = spark.read.jdbc(url, "dim_region", properties=properties)
-    dim_date = spark.read.jdbc(url, "dim_fecha", properties=properties)
+    dim_contributor = spark.read \
+        .format("jdbc") \
+        .option("url", url_) \
+        .option("dbtable", "dim_cotizante") \
+        .options(**options) \
+        .load()
+    
+    dim_medical_center = spark.read \
+        .format("jdbc") \
+        .option("url", url_) \
+        .option("dbtable", "dim_centro_medico") \
+        .options(**options) \
+        .load()
+    
+    dim_region = spark.read \
+        .format("jdbc") \
+        .option("url", url_) \
+        .option("dbtable", "dim_region") \
+        .options(**options) \
+        .load()
+    
+    dim_date = spark.read \
+        .format("jdbc") \
+        .option("url", url_) \
+        .option("dbtable", "dim_fecha") \
+        .options(**options) \
+        .load()
 
     return dim_contributor, dim_medical_center, dim_region, dim_date
 
@@ -108,7 +142,7 @@ def run():
 
     df_medical_center, df_region, df_contributor, df_demographic, df_date = get_dimensions()
 
-    new_model(df_demographic.toPandas(), "dim_demografica", PROCESS)
+    insert_data(df_demographic.toPandas(), "dim_demografica", URL, KEY)
     dim_demographic = query_dimensions_demografic()
 
     df_contributor = dim_demographic.join(df_contributor_aux, on=["direccion", "estado_civil", "estracto", "tipo_discapacidad", "salario_base"])
@@ -129,4 +163,4 @@ def run():
     merged_df = merged_df.join(dim_date.select("fecha_id", "fecha"), merged_df["fecha_retiro"]==dim_date["fecha"], "inner")
 
     fact_retreat = merged_df.select("fecha_id", "region_id", "centro_medico_id", "cotizante_id", "cambio_a_eps")
-    new_model(fact_retreat.toPandas(), "fact_retiro", PROCESS)
+    insert_data(fact_retreat.toPandas(), "fact_retiro", URL, KEY)
